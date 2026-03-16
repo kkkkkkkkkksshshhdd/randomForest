@@ -1,0 +1,83 @@
+# 1. 加载必要的 R 包
+library(randomForest)
+library(rfPermute)
+library(ggplot2)
+library(dplyr)
+
+# 2. 读取数据 (假设文件名为 env_data.txt，且包含 Sample, Shannon 及多个环境因子列)
+data <- read.table("env_data.txt", header = TRUE, sep = "\t")
+rownames(data) <- data$Sample
+data <- data[, -1] # 剔除样本名列，只保留分析数据
+
+# ==========================================
+# 3. 模型整体的显著性检验 (999次置换检验)
+# ==========================================
+set.seed(123) # 设置随机种子保证结果可重复
+rf_actual <- randomForest(Shannon ~ ., data = data, ntree = 500)
+actual_r2 <- rf_actual$rsq[length(rf_actual$rsq)] 
+actual_var_exp <- actual_r2 * 100 
+
+n_perm <- 999
+perm_r2 <- numeric(n_perm)
+for(i in 1:n_perm){
+  perm_data <- data
+  perm_data$Shannon <- sample(perm_data$Shannon) # 打乱响应变量
+  rf_perm <- randomForest(Shannon ~ ., data = perm_data, ntree = 500)
+  perm_r2[i] <- rf_perm$rsq[length(rf_perm$rsq)]
+}
+# 计算整体 p 值
+p_val_model <- sum(perm_r2 >= actual_r2) / (n_perm + 1)
+model_sig_mark <- ifelse(p_val_model < 0.001, "***", 
+                         ifelse(p_val_model < 0.01, "**", 
+                                ifelse(p_val_model < 0.05, "*", "ns")))
+model_annotation <- sprintf("Overall Model:\nVar explained = %.1f%%\np-value = %.3f %s", 
+                            actual_var_exp, p_val_model, model_sig_mark)
+
+# ==========================================
+# 4. 各个特征的显著性检验
+# ==========================================
+set.seed(123)
+rf_p <- rfPermute(Shannon ~ ., data = data, ntree = 500, nrep = 999)
+imp_matrix <- rfPermute::importance(rf_p)
+imp_df <- as.data.frame(imp_matrix)
+
+# 整理绘图数据
+plot_data <- data.frame(
+  Variable = rownames(imp_df),
+  IncMSE = imp_df$`%IncMSE`,
+  p_value = imp_df$`%IncMSE.pval`
+)
+
+# 添加星号标签
+plot_data$Sig_Label <- ifelse(plot_data$p_value < 0.001, "***",
+                              ifelse(plot_data$p_value < 0.01, "**",
+                                     ifelse(plot_data$p_value < 0.05, "*", ""))) 
+
+plot_data <- plot_data %>% arrange(IncMSE)
+plot_data$Variable <- factor(plot_data$Variable, levels = plot_data$Variable)
+
+# ==========================================
+# 5. 绘制高颜值可视化图表
+# ==========================================
+x_max <- max(plot_data$IncMSE) * 1.25 
+
+ggplot(plot_data, aes(x = IncMSE, y = Variable)) +
+  geom_col(fill = "#E67E22", alpha = 0.85, width = 0.6) + # 胡萝卜橙
+  geom_text(aes(label = Sig_Label, x = IncMSE + (x_max * 0.02)), 
+            size = 6, color = "#C0392B", vjust = 0.75, hjust = 0) +
+  annotate("text", x = x_max, y = 1.5, 
+           label = model_annotation, hjust = 1, vjust = 0, 
+           size = 4.5, fontface = "italic", color = "#7E5109") +
+  theme_bw() +
+  scale_x_continuous(limits = c(0, x_max), expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Relative Importance of Environmental Factors",
+       y = "Environmental Factors",
+       x = "Variable Importance (%IncMSE)") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 15, color = "#4A2311"),
+    axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.title = element_text(size = 13, face = "bold", color = "#4A2311"),
+    panel.grid.major.y = element_blank(),
+    panel.border = element_rect(color = "#A04000", fill = NA, linewidth = 1)
+  )
