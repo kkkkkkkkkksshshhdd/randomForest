@@ -1,0 +1,52 @@
+# 加载绘图包
+if (!require("ggplot2")) install.packages("ggplot2")
+library(ggplot2)
+
+# 从独立文件读取数据
+# header = TRUE 表示第一行是表头，sep = "\t" 表示使用制表符分隔
+df <- read.table("data.txt", header = TRUE, sep = "\t")
+
+# 确保 Group 列被识别为因子，以便正确映射形状和颜色
+df$Group <- factor(df$Group)
+
+# 开始绘图
+ggplot(df, aes(x = Richness_B, y = Retention)) +
+  
+  # 1. 添加带有灰色置信区间的全局线性回归线
+  geom_smooth(method = "lm", se = TRUE, color = "black", 
+              fill = "grey85", alpha = 0.6) +
+  
+  # 2. 添加散点，按组别映射形状和颜色
+  geom_point(aes(shape = Group, color = Group), size = 3) +
+  
+  # 3. 手动定义与原图一致的形状和颜色
+  # 15=正方形, 17=三角形, 16=圆形
+  scale_shape_manual(values = c("Group1" = 15, "Group2" = 17, "Group3" = 16)) +
+  scale_color_manual(values = c("Group1" = "#E89B53",   # 橙色
+                                "Group2" = "#71C5B6",   # 青色
+                                "Group3" = "#1A74B1")) + # 深蓝色
+  
+  # 4. 坐标轴刻度与范围调整
+  scale_x_continuous(breaks = seq(900, 1800, 300), limits = c(900, 2100)) +
+  scale_y_continuous(breaks = seq(10, 60, 10), limits = c(10, 60)) +
+  
+  # 5. 添加统计学注释 (r 值 和 P 值)
+  annotate("text", x = 1600, y = 60, label = "r = -0.49", size = 5, hjust = 0) +
+  annotate("text", x = 1600, y = 56, label = "italic(P) == 0.041", 
+           parse = TRUE, size = 5, hjust = 0) +
+  
+  # 6. 设置坐标轴标签 (处理 15N 上标)
+  labs(
+    x = "Richness-B",
+    y = expression(paste("Necromass ", ""^{15}, "N retention (%)"))
+  ) +
+  
+  # 7. 主题优化
+  theme_classic() +
+  theme(
+    legend.position = "none",                   # 隐藏图例
+    axis.text = element_text(size = 12, color = "black"),
+    axis.title = element_text(size = 14),
+    axis.line = element_line(color = "black", linewidth = 0.5)
+  )
+
